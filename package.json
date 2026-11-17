@@ -11,6 +11,8 @@
     "build": "next build",
     "start": "next start",
     "test:session": "node --test src/lib/conversation-session.test.mjs",
+    "test:ai": "node --test src/lib/ai/config.test.mjs src/lib/ai/request-validation.test.mjs src/lib/ai/ollama-adapter.test.mjs src/lib/ai/handler.test.mjs src/lib/conversation/orchestrator.test.mjs src/lib/conversation/stream-reader.test.mjs",
+    "test": "npm run test:session && npm run test:ai",
     "pretypecheck": "next typegen",
     "typecheck": "tsc --noEmit"
   },
