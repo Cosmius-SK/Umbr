@@ -8,75 +8,46 @@ import {
   type KeyboardEvent,
 } from "react";
 import { getPrototypeReply } from "@/lib/prototype-responder";
+import {
+  loadConversationSession,
+  MAX_HISTORY_LENGTH,
+  MAX_MESSAGE_LENGTH,
+  saveConversationSession,
+  type ConversationState,
+  type Message,
+} from "@/lib/conversation-session.mjs";
 
-type Message = {
-  id: string;
-  role: "em" | "creator";
-  text: string;
-};
-
-const STORAGE_KEY = "umbr:em:conversation:v1";
-const MAX_MESSAGE_LENGTH = 2000;
-const MAX_HISTORY_LENGTH = 100;
 const WELCOME_MESSAGE: Message = {
   id: "welcome",
   role: "em",
   text: "I'm Em.\n\nSo, this is where we begin. I don't know much about you yet, and I suppose you don't know much about me either.\n\nI'd like to change that, one conversation at a time.\n\nWhat's on your mind?",
 };
 
-function isMessageList(value: unknown): value is Message[] {
-  return (
-    Array.isArray(value) &&
-    value.length > 0 &&
-    value.length <= MAX_HISTORY_LENGTH &&
-    value.every(
-      (message) =>
-        typeof message === "object" &&
-        message !== null &&
-        typeof message.id === "string" &&
-        (message.role === "em" || message.role === "creator") &&
-        typeof message.text === "string" &&
-        message.text.length <= MAX_MESSAGE_LENGTH * 2,
-    )
-  );
-}
-
 export default function Conversation() {
-  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
+  const [session, setSession] = useState<ConversationState>({
+    status: "loading",
+    messages: [WELCOME_MESSAGE],
+  });
   const [draft, setDraft] = useState("");
   const [checkingPrompt, setCheckingPrompt] = useState(false);
-  const [notice, setNotice] = useState("");
   const [storageUnavailable, setStorageUnavailable] = useState(false);
-  const [historyLoaded, setHistoryLoaded] = useState(false);
   const messageSequence = useRef(0);
   const bottomRef = useRef<HTMLLIElement>(null);
   const timeoutRef = useRef<number | null>(null);
 
+  const messages = session.messages;
+
   useEffect(() => {
-    try {
-      const saved = window.sessionStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed: unknown = JSON.parse(saved);
-        if (isMessageList(parsed)) {
-          setMessages(parsed);
-        }
-      }
-    } catch {
-      setStorageUnavailable(true);
-    } finally {
-      setHistoryLoaded(true);
-    }
+    const restored = loadConversationSession(() => window.sessionStorage, [WELCOME_MESSAGE]);
+    setSession({ status: restored.status, messages: restored.messages });
+    setStorageUnavailable(!restored.storageAvailable);
   }, []);
 
   useEffect(() => {
-    if (!historyLoaded) return;
-
-    try {
-      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
-    } catch {
+    if (saveConversationSession(() => window.sessionStorage, session) === false) {
       setStorageUnavailable(true);
     }
-  }, [historyLoaded, messages]);
+  }, [session]);
 
   useEffect(() => {
     const reduceMotion = window.matchMedia(
@@ -104,17 +75,19 @@ export default function Conversation() {
       role,
       text,
     };
-    setMessages((current) => [...current, message].slice(-MAX_HISTORY_LENGTH));
+    setSession((current) => ({
+      ...current,
+      messages: [...current.messages, message].slice(-MAX_HISTORY_LENGTH),
+    }));
   }
 
   function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = draft.trim();
-    if (!text || checkingPrompt) return;
+    if (!text || checkingPrompt || session.status !== "ready") return;
 
     addMessage("creator", text);
     setDraft("");
-    setNotice("");
     setCheckingPrompt(true);
 
     timeoutRef.current = window.setTimeout(() => {
@@ -123,18 +96,7 @@ export default function Conversation() {
       if (result.kind === "reply") {
         addMessage("em", result.text);
       } else {
-        if (messages.some((message) => message.id === "prototype-unavailable")) {
-          setNotice("No new reply is available: the conversation engine isn't connected.");
-        } else {
-          const unavailableMessage: Message = {
-            id: "prototype-unavailable",
-            role: "em",
-            text: result.text,
-          };
-          setMessages((current) =>
-            [...current, unavailableMessage].slice(-MAX_HISTORY_LENGTH),
-          );
-        }
+        addMessage("em", result.text);
       }
 
       setCheckingPrompt(false);
@@ -205,18 +167,13 @@ export default function Conversation() {
                     <i />
                     <i />
                   </span>
-                  Checking supported local responses…
+                  Checking local prompt matches only — no AI model is processing this message…
                 </div>
               </li>
             )}
             <li className="scroll-anchor" aria-hidden="true" ref={bottomRef} />
           </ol>
 
-          {notice && (
-            <p className="notice-line" role="status">
-              {notice}
-            </p>
-          )}
           {storageUnavailable && (
             <p className="notice-line notice-storage" role="status">
               This browser couldn't save the session history. Messages will remain
@@ -237,13 +194,13 @@ export default function Conversation() {
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={handleComposerKeyDown}
-              disabled={checkingPrompt}
+              disabled={checkingPrompt || session.status !== "ready"}
               aria-describedby="composer-help"
             />
             <button
               className="send-button"
               type="submit"
-              disabled={!draft.trim() || checkingPrompt}
+              disabled={!draft.trim() || checkingPrompt || session.status !== "ready"}
               aria-label="Send message"
             >
               <span>Send</span>

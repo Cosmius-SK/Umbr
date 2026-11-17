@@ -399,6 +399,12 @@ textarea {
 }
 
 @media (max-width: 600px) {
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+  }
+
   .topbar {
     min-height: 4.2rem;
     padding-inline: 1rem;
@@ -410,8 +416,8 @@ textarea {
 
   .conversation-panel {
     width: 100%;
-    height: calc(100svh - 4.75rem);
-    min-height: 25rem;
+    height: 100%;
+    min-height: 0;
     border-radius: 1rem;
   }
 
@@ -457,6 +463,26 @@ textarea {
 
   .composer-help {
     margin-inline: 1rem;
+  }
+}
+
+@media (max-width: 600px) and (max-height: 620px) {
+  .conversation-heading {
+    min-height: 6rem;
+    padding-block: 0.8rem;
+  }
+
+  .prototype-notice {
+    margin-top: 0.65rem;
+    padding-block: 0.5rem;
+  }
+
+  .message-list {
+    padding-block: 0.8rem 0.5rem;
+  }
+
+  .composer-help {
+    margin-bottom: 0.55rem;
   }
 }
 
