@@ -1,0 +1,27 @@
+# Dependencies and generated application output
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+
+# Local secrets and environment configuration
+.env*
+!.env.example
+
+# Vercel local configuration
+.vercel/
+
+# Logs and local OS files
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Architecture documents not approved for public publication
+/Project Umbr - Architecture Review Report.docx
+/Project Umbr - Logical Architecture Blueprint v1.0.docx
+/Project Umbr - Logical Architecture Blueprint v1.1 Proposal.docx
