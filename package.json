@@ -10,6 +10,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test:session": "node --test src/lib/conversation-session.test.mjs",
     "pretypecheck": "next typegen",
     "typecheck": "tsc --noEmit"
   },
