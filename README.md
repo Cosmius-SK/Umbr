@@ -4,7 +4,11 @@ Project Umbr is an evolving AI ecosystem. Its first AI entity is Embr, commonly 
 
 ## Em
 
-The initial application page identifies **Em** (formal identity: **Embr**) and introduces Em with “I'm Em.” The confirmed identity and character decisions are documented in [Em Identity Core v0.1](docs/identity/Em-Identity-Core-v0.1.md). The page is a static identity screen; it does not implement conversation or AI capabilities.
+The application identifies **Em** (formal identity: **Embr**) and opens with “I'm Em.” The confirmed identity and character decisions are documented in [Em Identity Core v0.1](docs/identity/Em-Identity-Core-v0.1.md).
+
+## Conversation prototype
+
+The current interface demonstrates a first conversation locally. Messages are stored in the active browser tab's `sessionStorage` and are not sent to a service. A small local responder recognizes only a few exact identity prompts; other messages receive an explicit notice that no conversation engine is connected. This prototype does not use an AI model, provide arbitrary reasoning, or create persistent memory.
 
 ## Development setup
 
