@@ -19,6 +19,10 @@ import {
   ConversationStreamError,
   readConversationStream,
 } from "@/lib/conversation/stream-reader.mjs";
+import {
+  incompleteResponseStatus,
+  removeIncompleteResponse,
+} from "@/lib/conversation/response-state.mjs";
 
 const WELCOME_MESSAGE: Message = {
   id: "welcome",
@@ -102,7 +106,7 @@ export default function Conversation() {
   function removePendingMessage(id: string) {
     setSession((current) => ({
       ...current,
-      messages: current.messages.filter((message) => message.id !== id),
+      messages: removeIncompleteResponse(current.messages, id).messages,
     }));
   }
 
@@ -130,6 +134,7 @@ export default function Conversation() {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    let streamedText = "";
 
     try {
       const response = await fetch("/api/conversation", {
@@ -154,6 +159,7 @@ export default function Conversation() {
       for await (const event of readConversationStream(response.body)) {
         if (event.type !== "delta") continue;
         receivedText = true;
+        streamedText += event.text;
         setSession((current) => ({
           ...current,
           messages: current.messages.some((message) => message.id === pendingReply.id)
@@ -171,13 +177,14 @@ export default function Conversation() {
       }
     } catch (error) {
       removePendingMessage(pendingReply.id);
-      if (controller.signal.aborted) {
-        setResponseStatus("Response cancelled. Your message remains in this tab's session.");
-      } else if (error instanceof ConversationStreamError) {
-        setResponseStatus(error.message);
-      } else {
-        setResponseStatus("The conversation request failed. Check the local service and try again.");
-      }
+      const errorMessage = error instanceof ConversationStreamError
+        ? error.message
+        : "The conversation request failed. Check the local service and try again.";
+      setResponseStatus(incompleteResponseStatus({
+        cancelled: controller.signal.aborted,
+        hadPartialText: streamedText.length > 0,
+        errorMessage,
+      }));
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setIsSending(false);

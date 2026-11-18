@@ -35,6 +35,49 @@ test("remote endpoints and hosted Ollama model names are rejected", () => {
   assert.equal(readAIConfig({ ...enabled, AI_PROVIDER: "openai" }).availability, "misconfigured");
 });
 
+test("loopback endpoints are returned only in canonical form", () => {
+  assert.equal(readAIConfig({ ...enabled, OLLAMA_BASE_URL: "HTTP://LOCALHOST:11434/" }).baseUrl, "http://localhost:11434");
+  assert.equal(readAIConfig({ ...enabled, OLLAMA_BASE_URL: "http://[::1]:11434" }).baseUrl, "http://[::1]:11434");
+});
+
+test("invalid Ollama URLs fail closed and never survive in configuration", () => {
+  const invalidUrls = [
+    "https://127.0.0.1:11434",
+    "ftp://127.0.0.1:11434",
+    "file:///127.0.0.1:11434",
+    "http://example.com:11434",
+    "http://localhost.evil:11434",
+    "http://user:pass@127.0.0.1:11434",
+    "http://@127.0.0.1:11434",
+    "http://127.0.0.1:11434/api",
+    "http://127.0.0.1:11434/../api",
+    "http://127.0.0.1:11434?mode=local",
+    "http://127.0.0.1:11434?",
+    "http://127.0.0.1:11434#fragment",
+    "http://127.0.0.1:11434#",
+    "not a URL",
+    "http:\\\\127.0.0.1:11434",
+  ];
+
+  for (const OLLAMA_BASE_URL of invalidUrls) {
+    const config = readAIConfig({ ...enabled, OLLAMA_BASE_URL });
+    assert.equal(config.availability, "misconfigured", OLLAMA_BASE_URL);
+    assert.equal(config.enabled, false, OLLAMA_BASE_URL);
+    assert.equal(config.baseUrl, "http://127.0.0.1:11434", OLLAMA_BASE_URL);
+    assert.equal(config.baseUrl.includes(OLLAMA_BASE_URL), false, OLLAMA_BASE_URL);
+  }
+});
+
+test("an invalid URL is misconfigured even when inference is otherwise disabled", () => {
+  const config = readAIConfig({
+    NODE_ENV: "development",
+    EM_AI_ENABLED: "false",
+    OLLAMA_BASE_URL: "https://127.0.0.1:11434",
+  });
+  assert.equal(config.availability, "misconfigured");
+  assert.equal(config.baseUrl, "http://127.0.0.1:11434");
+});
+
 test("missing model and invalid timeout use safe local-only configuration", () => {
   const config = readAIConfig({ ...enabled, OLLAMA_MODEL: "", OLLAMA_TIMEOUT_MS: "not-a-number" });
   assert.equal(config.availability, "needs_model");

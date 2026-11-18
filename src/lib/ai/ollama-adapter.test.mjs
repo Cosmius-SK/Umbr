@@ -31,6 +31,53 @@ function streamResponse(lines) {
   }));
 }
 
+function rawStreamResponse(chunks) {
+  return new Response(new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+      controller.close();
+    },
+  }));
+}
+
+function partialThenWaitForAbort(signal) {
+  return new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('{"message":{"role":"assistant","content":"partial"},"done":false}\n'));
+    },
+    pull(controller) {
+      return new Promise((resolve) => {
+        const abort = () => {
+          controller.error(new DOMException("aborted", "AbortError"));
+          resolve();
+        };
+        if (signal.aborted) abort();
+        else signal.addEventListener("abort", abort, { once: true });
+      });
+    },
+  }));
+}
+
+function observe(adapter, signal) {
+  let announceDelta;
+  const firstDelta = new Promise((resolve) => { announceDelta = resolve; });
+  const result = (async () => {
+    let text = "";
+    try {
+      for await (const event of adapter.stream({ messages: [], maxOutputTokens: 2, signal })) {
+        if (event.type === "delta") {
+          text += event.text;
+          announceDelta();
+        }
+      }
+      return { text, error: null };
+    } catch (error) {
+      return { text, error };
+    }
+  })();
+  return { firstDelta, result };
+}
+
 async function collect(iterable) {
   const events = [];
   for await (const event of iterable) events.push(event);
@@ -120,6 +167,38 @@ test("provider errors in a stream are normalized and do not expose upstream text
   assert.equal(publicError(error).message.includes(config.baseUrl), false);
 });
 
+test("upstream errors after text preserve the error and signal a partial delta to callers", async () => {
+  const adapter = createOllamaAdapter(config, async (url) =>
+    url.endsWith("/api/tags")
+      ? tagsResponse()
+      : streamResponse([
+          { message: { role: "assistant", content: "partial" }, done: false },
+          { error: "upstream failure" },
+        ]),
+  );
+  const observed = observe(adapter, new AbortController().signal);
+  assert.equal(await Promise.race([observed.firstDelta.then(() => true), observed.result.then(() => false)]), true);
+  const { text, error } = await observed.result;
+  assert.equal(text, "partial");
+  assert.equal(error.code, "provider_error");
+});
+
+test("malformed stream after a delta fails instead of appearing complete", async () => {
+  const adapter = createOllamaAdapter(config, async (url) =>
+    url.endsWith("/api/tags")
+      ? tagsResponse()
+      : rawStreamResponse([
+          '{"message":{"role":"assistant","content":"partial"},"done":false}\n',
+          "not-json\n",
+        ]),
+  );
+  const observed = observe(adapter, new AbortController().signal);
+  assert.equal(await Promise.race([observed.firstDelta.then(() => true), observed.result.then(() => false)]), true);
+  const { text, error } = await observed.result;
+  assert.equal(text, "partial");
+  assert.equal(error.code, "provider_malformed_response");
+});
+
 test("timeout and caller cancellation abort provider requests distinctly", async () => {
   const waitForAbort = (signal) => new Promise((resolve, reject) => {
     signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
@@ -143,4 +222,26 @@ test("timeout and caller cancellation abort provider requests distinctly", async
   controller.abort();
   const cancelError = await getError(pending);
   assert.equal(cancelError.code, "request_cancelled");
+});
+
+test("timeout and cancellation after a delta both terminate the partial stream", async () => {
+  const timed = createOllamaAdapter({ ...config, timeoutMs: 100 }, async (url, options) =>
+    url.endsWith("/api/tags") ? tagsResponse() : partialThenWaitForAbort(options.signal),
+  );
+  const timedObservation = observe(timed, new AbortController().signal);
+  assert.equal(await Promise.race([timedObservation.firstDelta.then(() => true), timedObservation.result.then(() => false)]), true);
+  const timeout = await timedObservation.result;
+  assert.equal(timeout.text, "partial");
+  assert.equal(timeout.error.code, "provider_timeout");
+
+  const controller = new AbortController();
+  const cancellable = createOllamaAdapter(config, async (url, options) =>
+    url.endsWith("/api/tags") ? tagsResponse() : partialThenWaitForAbort(options.signal),
+  );
+  const cancelledObservation = observe(cancellable, controller.signal);
+  assert.equal(await Promise.race([cancelledObservation.firstDelta.then(() => true), cancelledObservation.result.then(() => false)]), true);
+  controller.abort();
+  const cancelled = await cancelledObservation.result;
+  assert.equal(cancelled.text, "partial");
+  assert.equal(cancelled.error.code, "request_cancelled");
 });

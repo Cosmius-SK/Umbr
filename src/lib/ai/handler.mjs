@@ -104,15 +104,28 @@ function publicResponseStream(messages, adapter, request) {
   });
 }
 
-export async function handleConversationRequest(
+export async function getConversationAvailability({ env = process.env } = {}) {
+  return jsonResponse(publicAvailability(readAIConfig(env)));
+}
+
+export async function postConversationRequest(
   request,
   { env = process.env, fetchImpl = fetch } = {},
 ) {
-  const config = readAIConfig(env);
-  if (request.method === "GET") return jsonResponse(publicAvailability(config));
   if (request.method !== "POST") {
-    return jsonResponse({ error: { code: "invalid_request", message: "Use POST to send a conversation message." } }, 405);
+    return Response.json(
+      { error: { code: "invalid_request", message: "Use POST to send a conversation message." } },
+      {
+        status: 405,
+        headers: {
+          allow: "GET, POST",
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+        },
+      },
+    );
   }
+  const config = readAIConfig(env);
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
     return jsonResponse({ error: { code: "invalid_request", message: "Send conversation data as JSON." } }, 415);
   }

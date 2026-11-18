@@ -3,15 +3,20 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 512;
 
 function normalizeLoopbackUrl(value) {
+  const raw = value.trim();
+  const rawParts = raw.match(/^http:\/\/([^/?#]*)([^?#]*)/i);
+  if (!rawParts || rawParts[1].includes("@")) return null;
+
   try {
-    const url = new URL(value);
+    const url = new URL(raw);
     const valid = (
       url.protocol === "http:" &&
       ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) &&
       !url.username &&
       !url.password &&
-      !url.search &&
-      !url.hash &&
+      !raw.includes("?") &&
+      !raw.includes("#") &&
+      (rawParts[2] === "" || rawParts[2] === "/") &&
       (url.pathname === "/" || url.pathname === "")
     );
     return valid ? url.origin : null;
@@ -23,7 +28,8 @@ function normalizeLoopbackUrl(value) {
 export function readAIConfig(env = process.env) {
   const provider = (env.AI_PROVIDER || "ollama").trim().toLowerCase();
   const configuredBaseUrl = (env.OLLAMA_BASE_URL || DEFAULT_BASE_URL).trim();
-  const baseUrl = normalizeLoopbackUrl(configuredBaseUrl) || configuredBaseUrl;
+  const canonicalBaseUrl = normalizeLoopbackUrl(configuredBaseUrl);
+  const baseUrl = canonicalBaseUrl || DEFAULT_BASE_URL;
   const model = (env.OLLAMA_MODEL || "").trim();
   const enabledSetting = (env.EM_AI_ENABLED || "false").trim().toLowerCase() === "true";
   const timeoutCandidate = Number.parseInt(env.OLLAMA_TIMEOUT_MS || "", 10);
@@ -32,14 +38,14 @@ export function readAIConfig(env = process.env) {
     : DEFAULT_TIMEOUT_MS;
 
   let availability;
-  if (env.VERCEL === "1") availability = "hosted_disabled";
-  else if (env.NODE_ENV === "production") availability = "production_disabled";
-  else if (!enabledSetting) availability = "disabled";
-  else if (
+  if (
     provider !== "ollama" ||
-    !normalizeLoopbackUrl(baseUrl) ||
+    !canonicalBaseUrl ||
     /(?:^|[-_:])cloud(?:$|[-_:])/i.test(model)
   ) availability = "misconfigured";
+  else if (env.VERCEL === "1") availability = "hosted_disabled";
+  else if (env.NODE_ENV === "production") availability = "production_disabled";
+  else if (!enabledSetting) availability = "disabled";
   else if (!model) availability = "needs_model";
   else availability = "local_enabled";
 
