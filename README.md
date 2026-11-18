@@ -6,49 +6,60 @@ Project Umbr is an evolving AI ecosystem. Its first AI entity is Embr, commonly 
 
 The application identifies **Em** (formal identity: **Embr**) and opens with “I'm Em.” The confirmed identity and character decisions are documented in [Em Identity Core v0.1](docs/identity/Em-Identity-Core-v0.1.md).
 
-## Conversation prototype
+## Model-independent conversation
 
-The current interface demonstrates a first conversation locally. Messages are stored in the active browser tab's `sessionStorage` and are not sent to a service. A small local responder recognizes only a few exact identity prompts; other messages receive an explicit notice that no conversation engine is connected. This prototype does not use an AI model, provide arbitrary reasoning, or create persistent memory.
+Em's browser interface talks only to the Next.js conversation API. The server validates conversation messages, adds Em's approved identity instructions, and calls a provider-neutral streaming interface. The initial adapter uses the Ollama HTTP API on the same computer as the development server. The interface and identity instructions do not depend on Ollama-specific code.
+
+AI inference is disabled by default. The application does not install Ollama, download models, call hosted inference providers, or require Ollama for tests or builds. When no model is available, the conversation UI remains usable and clearly reports why Em cannot generate a reply.
 
 ## Development setup
 
-Use a maintained Node.js LTS release. Node.js 26 LTS is the recommended development and deployment runtime; supported project runtimes are Node.js 22, 24, and 26 LTS. Next.js 16 requires Node.js 20.9 or later. Node 20 is end-of-life, is not supported by this project for normal development, and is not suitable for production. The existing Node.js 20.15.1 runtime may be used only for temporary compatibility checks. A local production-build check on that runtime failed while processing CSS, including a CSS/PostCSS worker startup error and an `ERR_REQUIRE_ESM` error during a webpack diagnostic. This result is inconclusive because Node 20.15.1 is outside the project's supported runtime range; validate the production build on Node.js 26 before diagnosing the cause.
+Use a supported Node.js LTS release and npm. Node.js 26 LTS is the recommended development runtime and is used in CI. The project also supports Node.js 22 and 24 LTS. Node 20 is end-of-life and is not supported for normal project development or production.
 
-Install Node.js using a method appropriate for your operating system from the [official Node.js downloads page](https://nodejs.org/en/download/), then verify the runtime:
-
-```sh
-node --version
-npm --version
-```
-
-Clone the repository and install the exact dependency tree from the committed npm lockfile:
+Clone the repository and install the committed dependency tree:
 
 ```sh
 git clone https://github.com/Cosmius-SK/Umbr.git
 cd Umbr
 npm ci
-```
-
-These instructions apply to Windows, macOS, and Linux. No global project CLI is needed. Start the local development server with:
-
-```sh
+npm test
+npm run typecheck
+npm run build
 npm run dev
 ```
 
-Open the local URL printed by Next.js. Before submitting changes, run:
+Open the local URL printed by Next.js. Project commands use local dependencies; no global CLI package is needed. `npm ci`, tests, typecheck, and production build do not require Ollama or an inference service.
 
-```sh
-npm run typecheck
-npm run build
+## Optional local Ollama inference
+
+Ollama must already be installed and running on the same computer as the Next.js development server. The application will not install Ollama or fetch a model. Check the models already installed locally with `ollama list`, then copy `.env.example` to `.env.local` and set `OLLAMA_MODEL` to an exact installed model name. In PowerShell, copy it with `Copy-Item .env.example .env.local`; on macOS or Linux, use `cp .env.example .env.local`. For example:
+
+```dotenv
+AI_PROVIDER=ollama
+EM_AI_ENABLED=true
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=your-installed-local-model-name
+OLLAMA_TIMEOUT_MS=60000
 ```
 
-There are no application environment variables yet, so an `.env.example` file is not needed. If a future integration adds configuration, document variable names there and keep real credentials in an ignored local environment file or the deployment provider's secret settings.
+Keep `EM_AI_ENABLED=false` to leave inference off. The adapter accepts loopback URLs only, checks the local model list before generation, and does not call Ollama's model pull endpoint. Ollama cloud model names are rejected. The application sends prompts from the browser to its own Next.js server, which sends them to the local Ollama process only when local development inference is enabled. Session history remains tab-scoped in `sessionStorage`; there is no database or long-term memory.
 
-## Technology
+To change models, select another exact model name already shown by `ollama list` and update `OLLAMA_MODEL` in `.env.local`; restart the development server. No model is assumed to be present, and no model download is started by this project.
+
+## Hosted deployment and security
+
+Hosted inference is disabled in production, including on Vercel. A Vercel server cannot reach Ollama running on a developer's computer through `127.0.0.1`; this project does not add tunnels, public Ollama access, proxies, hosted inference, or paid services. The production build and deployment work without an inference provider, local model, or credentials.
+
+The browser never receives the Ollama endpoint or internal provider errors. Requests accept only creator and Em message roles; server-owned system instructions are added after validation and cannot be replaced by browser messages. Request size, history length, message length, output tokens, and provider time are bounded. Only the server-side Ollama adapter knows the loopback endpoint. Do not expose Ollama beyond loopback.
+
+Local inference uses the computer's existing resources and may be slow or unavailable depending on its capabilities and installed model. No new hardware or recurring service cost is required or assumed.
+
+## Technology and validation
 
 - Next.js App Router, React, and TypeScript
-- Tailwind CSS 4 through its local PostCSS plugin
-- npm with exact direct dependency pins and a committed `package-lock.json`
-- Node.js 22, 24, or 26 LTS for supported development; Node.js 26 LTS for CI and deployment
+- Tailwind CSS 4 through the local PostCSS plugin
+- npm with exact direct dependency pins and committed `package-lock.json`
+- Node.js 22, 24, or 26 LTS supported; Node.js 26 LTS used by CI
+- `npm test`, `npm run typecheck`, and `npm run build`
 
-The application, model integration, database, authentication, and deployment integrations are not part of this scaffold.
+See [Conversation Architecture v0.3](docs/architecture/Conversation-Architecture-v0.3.md) for component boundaries and request flow.
